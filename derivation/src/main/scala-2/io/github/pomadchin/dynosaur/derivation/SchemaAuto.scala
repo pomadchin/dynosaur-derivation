@@ -1,8 +1,9 @@
 package io.github.pomadchin.dynosaur.derivation
 
+import dynosaur.Schema
+
 import scala.language.experimental.macros
 import scala.reflect.macros.whitebox
-import dynosaur.Schema
 
 object SchemaAuto {
   def derive[T]: Schema[T] = macro SchemaMacro.implNoDiscriminator[T]
