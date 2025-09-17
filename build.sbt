@@ -16,10 +16,9 @@ lazy val commonSettings = Seq(
     "-language:existentials",
     "-feature"
   ),
-  scalacOptions ++= when(scalaBinaryVersion.value == "2.13")("-Ymacro-annotations", "-Xsource:3"),
   scalacOptions ++= (scalaBinaryVersion.value match {
-    case "3" => Nil
-    case _ => List("-Xsource:3")
+    case "3" => List("-Ykind-projector:underscores")
+    case _ => List("-Xsource:3", "-P:kind-projector:underscore-placeholders")
   }),
   Test / scalacOptions ++= when(scalaBinaryVersion.value.startsWith("3"))("-experimental"),
   description := "Dynosaur derivation library",
@@ -38,6 +37,12 @@ lazy val commonSettings = Seq(
       "@pomadchin",
       url("https://github.com/pomadchin")
     )
+  ),
+  // resolvers
+  resolvers += Resolver.sonatypeCentralSnapshots,
+  // compiler plugins
+  libraryDependencies ++= when(scalaBinaryVersion.value.startsWith("2"))(
+    compilerPlugin("org.typelevel" % "kind-projector" % "0.13.3" cross CrossVersion.full)
   )
 )
 
