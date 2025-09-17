@@ -6,8 +6,8 @@ import scala.language.experimental.macros
 import scala.reflect.macros.whitebox
 
 object SchemaAuto {
-  def derive[T]: Schema[T] = macro SchemaMacro.implNoDiscriminator[T]
-  def derive[T](discriminatorName: String): Schema[T] = macro SchemaMacro.implWithDiscriminator[T]
+  def derive[T <: Product]: Schema[T] = macro SchemaMacro.implNoDiscriminator[T]
+  def derive[T <: Product](discriminatorName: String): Schema[T] = macro SchemaMacro.implWithDiscriminator[T]
 }
 
 object SchemaMacro {

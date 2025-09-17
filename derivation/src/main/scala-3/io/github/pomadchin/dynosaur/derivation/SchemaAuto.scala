@@ -10,10 +10,10 @@ import scala.deriving.Mirror
 import scala.compiletime.{constValue, constValueTuple, erasedValue, summonInline}
 
 object SchemaAuto:
-  inline def derive[T](using m: Mirror.ProductOf[T]): Schema[T] =
+  inline def derive[T <: Product](using m: Mirror.ProductOf[T]): Schema[T] =
     deriveSchema[T](None)
 
-  inline def derive[T](discriminatorName: String)(using m: Mirror.ProductOf[T]): Schema[T] =
+  inline def derive[T <: Product](discriminatorName: String)(using m: Mirror.ProductOf[T]): Schema[T] =
     deriveSchema[T](Some(discriminatorName))
 
   private inline def deriveSchema[T](discriminatorName: Option[String])(using m: Mirror.ProductOf[T]): Schema[T] =
