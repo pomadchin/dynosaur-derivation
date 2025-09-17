@@ -17,7 +17,7 @@ lazy val commonSettings = Seq(
     "-feature"
   ),
   scalacOptions ++= (scalaBinaryVersion.value match {
-    case "3" => List("-Ykind-projector:underscores")
+    case "3" => List("-Xkind-projector:underscores")
     case _ => List("-Xsource:3", "-P:kind-projector:underscore-placeholders")
   }),
   Test / scalacOptions ++= when(scalaBinaryVersion.value.startsWith("3"))("-experimental"),
