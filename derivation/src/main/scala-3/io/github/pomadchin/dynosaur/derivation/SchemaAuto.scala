@@ -17,7 +17,7 @@ object SchemaAuto:
     deriveSchema[T](Some(discriminatorName))
 
   private inline def deriveSchema[T](discriminatorName: Option[String])(using m: Mirror.ProductOf[T]): Schema[T] =
-    val names = constValueTuple[m.MirroredElemLabels].toList.asInstanceOf[List[String]]
+    val names = constValueTuple[m.MirroredElemLabels].asList[String]
     val fields = collectFields[T, m.MirroredElemTypes](names, 0).map(nested => m.fromProduct(flatten(nested)))
 
     discriminatorName match
@@ -59,12 +59,12 @@ object SchemaAuto:
     inline erasedValue[A] match
       case _: Option[a] =>
         val schema = summonInline[Schema[a]]
-        val getter: T => Option[a] = (t: T) => t.asInstanceOf[Product].productElement(idx).asInstanceOf[Option[a]]
+        val getter: T => Option[a] = (t: T) => t.productElement[Option[a]](idx)
         Schema.field[T].opt[a](name, getter)(using schema).asInstanceOf[FreeApplicative[Field[T, *], A]]
 
       case _ =>
         val schema = summonInline[Schema[A]]
-        val getter: T => A = (t: T) => t.asInstanceOf[Product].productElement(idx).asInstanceOf[A]
+        val getter: T => A = (t: T) => t.productElement[A](idx)
         Schema.field[T](name, getter)(using schema)
 
   private def flatten(t: Tuple): Tuple =
@@ -74,3 +74,11 @@ object SchemaAuto:
       case h :: tail => h *: loop(tail)
 
     loop(t.toList)
+
+  extension [T](t: T)
+    def productElement[R](idx: Int): R =
+      t.asInstanceOf[Product].productElement(idx).asInstanceOf[R]
+
+  extension [T <: Tuple](t: T)
+    def asList[R]: List[R] =
+      t.toList.asInstanceOf[List[R]]
