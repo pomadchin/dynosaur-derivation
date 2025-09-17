@@ -58,7 +58,6 @@ lazy val derivation = project
   .settings(
     libraryDependencies ++= Seq(
       "org.systemfw" %% "dynosaur-core" % "0.7.1",
-      "org.typelevel" %% "cats-core" % "2.13.0" % Test,
       "org.scalatest" %% "scalatest" % "3.2.19" % Test
     )
   )
