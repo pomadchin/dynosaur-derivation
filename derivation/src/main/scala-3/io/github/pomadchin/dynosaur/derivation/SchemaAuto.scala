@@ -10,7 +10,7 @@ import cats.free.FreeApplicative
 import cats.data.Chain
 
 import scala.deriving.Mirror
-import scala.compiletime.{constValue, constValueTuple, erasedValue, error, summonFrom, summonInline}
+import scala.compiletime.{constValue, constValueTuple, erasedValue, summonFrom, summonInline}
 
 object SchemaAuto:
   inline def derive[T](using m: Mirror.Of[T]): Schema[T] = derive[T](true)
@@ -78,27 +78,22 @@ object SchemaAuto:
         val getter: T => Option[a] = (t: T) => t.productElement[Option[a]](idx)
         val getterNullable: T => Option[Option[a]] = (t: T) => t.productElement[Option[a]](idx).map(Some(_))
 
-        if nullabilityLenient then Schema.field[T].opt[Option[a]](name, getterNullable)(using schemaNullable).map(_.flatten).asInstanceOf[FreeApplicative[Field[T, *], A]]
-        else Schema.field[T].opt[a](name, getter)(using schema).asInstanceOf[FreeApplicative[Field[T, *], A]]
+        val field =
+          if nullabilityLenient then Schema.field[T].opt[Option[a]](name, getterNullable)(using schemaNullable).map(_.flatten)
+          else Schema.field[T].opt[a](name, getter)(using schema)
+
+        field.asInstanceOf[FreeApplicative[Field[T, *], A]]
 
       case _ =>
         val schema = summonInline[Schema[A]]
         val getter: T => A = (t: T) => t.productElement[A](idx)
         Schema.field[T](name, getter)(using schema)
 
-  private def flatten(t: Tuple): Tuple =
-    def loop(elems: List[Any]): Tuple = elems match
-      case Nil => EmptyTuple
-      case (h: Tuple) :: tail => flatten(h) ++ loop(tail)
-      case h :: tail => h *: loop(tail)
-
-    loop(t.toList)
-
   private inline def deriveSum[T](discriminatorName: Option[String], nullabilityLenient: Boolean)(using m: Mirror.SumOf[T]): Schema[T] =
     Schema.oneOf[T](altBuilder[T, m.MirroredElemTypes](_, discriminatorName, nullabilityLenient))
 
-  private inline def altBuilder[T, E <: Tuple](alt: AltBuilder[T], discriminatorName: Option[String], nullabilityLenient: Boolean): Chain[Alt[T]] =
-    inline erasedValue[E] match
+  private inline def altBuilder[T, Elems <: Tuple](alt: AltBuilder[T], discriminatorName: Option[String], nullabilityLenient: Boolean): Chain[Alt[T]] =
+    inline erasedValue[Elems] match
       case _: EmptyTuple => Chain.nil
       case _: (h *: t) =>
         // attempt to summon Schema[h], if not found, derive it
@@ -113,6 +108,14 @@ object SchemaAuto:
     case t: T => t
     case _ => orElse
   }
+
+  private def flatten(t: Tuple): Tuple =
+    def loop(elems: List[Any]): Tuple = elems match
+      case Nil => EmptyTuple
+      case (h: Tuple) :: tail => flatten(h) ++ loop(tail)
+      case h :: tail => h *: loop(tail)
+
+    loop(t.toList)
 
   extension [T](t: T)
     def productElement[R](idx: Int): R =

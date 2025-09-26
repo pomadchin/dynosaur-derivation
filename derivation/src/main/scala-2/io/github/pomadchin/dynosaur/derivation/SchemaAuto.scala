@@ -140,8 +140,7 @@ object SchemaMacro {
     // scalafix:off Disable.toString
     val companionLiteral = Literal(Constant(companion.name.toString))
     // scalafix:on
-    val discriminatorLiteral =
-      discriminatorName.map(str => Literal(Constant(str)))
+    val discriminatorLiteral = discriminatorName.map(str => Literal(Constant(str)))
 
     // const is used a discriminator
     val discriminatedRecord =
@@ -150,9 +149,7 @@ object SchemaMacro {
     val instance =
       q"""
         import _root_.cats.syntax.apply._
-        _root_.dynosaur.Schema.record[$tpe] { field =>
-          $discriminatedRecord
-        }
+        _root_.dynosaur.Schema.record[$tpe] { field => $discriminatedRecord }
       """
 
     c.Expr[Schema[T]](instance)
@@ -179,7 +176,7 @@ object SchemaMacro {
 
     val knownDirectSubclassesTypes = knownDirectSubclasses.map(applyTypeArgs(_)).sortBy(_.typeSymbol.fullName)
 
-    // For each subtype S, expand:
+    // for each subtype S, expand:
     //   val sS = SchemaAuto.derive[S](discriminatorName, nullabilityLenient)
     //   val aS = alt[S](sS)(implicitly[Prism[T, S]])
     // then combine with |+|
@@ -194,10 +191,8 @@ object SchemaMacro {
 
     val tree =
       q"""
-        _root_.dynosaur.Schema.oneOf[$tpe] { alt =>
-          import _root_.cats.syntax.semigroup._
-          $combined
-        }
+        import _root_.cats.syntax.semigroup._
+        _root_.dynosaur.Schema.oneOf[$tpe] { alt => $combined }
       """
 
     c.Expr[Schema[T]](tree)
