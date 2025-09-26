@@ -3,30 +3,49 @@ package io.github.pomadchin.dynosaur.derivation
 import dynosaur.Schema
 
 import scala.language.experimental.macros
-import scala.reflect.macros.whitebox
+import scala.reflect.macros.blackbox
 
 object SchemaAuto {
-  def derive[T <: Product]: Schema[T] = macro SchemaMacro.implNoDiscriminator[T]
-  def derive[T <: Product](discriminatorName: String): Schema[T] = macro SchemaMacro.implWithDiscriminator[T]
+  def derive[T]: Schema[T] = macro SchemaMacro.implNoDiscriminator[T]
+
+  def derive[T](nullabilityLenient: Boolean): Schema[T] =
+    macro SchemaMacro.implNoDiscriminatorAndNullability[T]
+
+  def derive[T](discriminatorName: String): Schema[T] =
+    macro SchemaMacro.implWithDiscriminator[T]
+
+  def derive[T](discriminatorName: String, nullabilityLenient: Boolean): Schema[T] =
+    macro SchemaMacro.implWithDiscriminatorAndNullability[T]
 }
 
 object SchemaMacro {
-  def implNoDiscriminator[T: c.WeakTypeTag](
-    c: whitebox.Context
-  ): c.Expr[Schema[T]] =
-    impl(c)(None)
+  def implNoDiscriminator[T: c.WeakTypeTag](c: blackbox.Context): c.Expr[Schema[T]] =
+    impl(c)(None, nullabilityLenient = true)
 
-  def implWithDiscriminator[T: c.WeakTypeTag](
-    c: whitebox.Context
-  )(discriminatorName: c.Expr[String]): c.Expr[Schema[T]] = {
+  def implNoDiscriminatorAndNullability[T: c.WeakTypeTag](c: blackbox.Context)(nullabilityLenient: c.Expr[Boolean]): c.Expr[Schema[T]] = {
     import c.universe._
-    val Literal(Constant(fieldName: String)) = discriminatorName.tree
-    impl(c)(Some(fieldName))
+    val Literal(Constant(nullability: Boolean)) = nullabilityLenient.tree
+    impl(c)(None, nullability)
   }
 
-  private def impl[T: c.WeakTypeTag](
-    c: whitebox.Context
-  )(discriminatorName: Option[String]): c.Expr[Schema[T]] = {
+  def implWithDiscriminator[T: c.WeakTypeTag](c: blackbox.Context)(discriminatorName: c.Expr[String]): c.Expr[Schema[T]] = {
+    import c.universe._
+    val Literal(Constant(discriminator: String)) = discriminatorName.tree
+    impl(c)(Some(discriminator), nullabilityLenient = true)
+  }
+
+  def implWithDiscriminatorAndNullability[T: c.WeakTypeTag](
+    c: blackbox.Context
+  )(discriminatorName: c.Expr[String], nullabilityLenient: c.Expr[Boolean]): c.Expr[Schema[T]] = {
+    import c.universe._
+    val Literal(Constant(discriminator: String)) = discriminatorName.tree
+    val Literal(Constant(nullability: Boolean)) = nullabilityLenient.tree
+    impl(c)(Some(discriminator), nullability)
+  }
+
+  // when nullabilityLenient is set to true, optional fields can be interpreted as either explicitly null or as completely missing
+  // schema favours missing fields on writes, but accepts both on reads
+  private def impl[T: c.WeakTypeTag](c: blackbox.Context)(discriminatorName: Option[String], nullabilityLenient: Boolean): c.Expr[Schema[T]] = {
     import c.universe._
 
     val tpe = weakTypeOf[T]
@@ -45,12 +64,17 @@ object SchemaMacro {
       val name = field.name.decodedName.toString
       // scalafix:on
       val getter = q"(x: $tpe) => x.${field.name}"
+      val getterNullable = q"(x: $tpe) => x.${field.name}.map(Some(_))"
+
       val fieldType = field.returnType
 
       if (fieldType.typeConstructor <:< typeOf[Option[?]].typeConstructor)
         fieldType match {
           case TypeRef(_, _, List(inner)) =>
-            q"""field.opt[$inner]($name, $getter)"""
+            if (nullabilityLenient)
+              q"""field.opt[$fieldType]($name, $getterNullable)(Schema.nullable).map(_.flatten)"""
+            else
+              q"""field.opt[$inner]($name, $getter)"""
           case _ =>
             c.abort(
               c.enclosingPosition,

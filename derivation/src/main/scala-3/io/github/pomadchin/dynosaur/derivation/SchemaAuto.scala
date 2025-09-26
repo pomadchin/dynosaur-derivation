@@ -11,14 +11,22 @@ import scala.compiletime.{constValue, constValueTuple, erasedValue, summonInline
 
 object SchemaAuto:
   inline def derive[T <: Product](using m: Mirror.ProductOf[T]): Schema[T] =
-    deriveSchema[T](None)
+    derive[T](true)
+
+  inline def derive[T <: Product](nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
+    deriveSchema[T](None, nullabilityLenient)
 
   inline def derive[T <: Product](discriminatorName: String)(using m: Mirror.ProductOf[T]): Schema[T] =
-    deriveSchema[T](Some(discriminatorName))
+    derive[T](discriminatorName, true)
 
-  private inline def deriveSchema[T](discriminatorName: Option[String])(using m: Mirror.ProductOf[T]): Schema[T] =
+  inline def derive[T <: Product](discriminatorName: String, nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
+    deriveSchema[T](Some(discriminatorName), nullabilityLenient)
+
+  // when nullabilityLenient is set to true, optional fields can be interpreted as either explicitly null or as completely missing
+  // schema favours missing fields on writes, but accepts both on reads
+  private inline def deriveSchema[T](discriminatorName: Option[String], nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
     val names = constValueTuple[m.MirroredElemLabels].asList[String]
-    val fields = collectFields[T, m.MirroredElemTypes](names, 0).map(nested => m.fromProduct(flatten(nested)))
+    val fields = collectFields[T, m.MirroredElemTypes](names, 0)(using nullabilityLenient).map(nested => m.fromProduct(flatten(nested)))
 
     discriminatorName match
       case Some(discriminator) =>
@@ -27,14 +35,14 @@ object SchemaAuto:
       case None =>
         Schema.fields(fields)
 
-  private inline def collectFields[T, Elems <: Tuple](names: List[String], idx: Int): FreeApplicative[Field[T, *], Tuple] =
+  private inline def collectFields[T, Elems <: Tuple](names: List[String], idx: Int)(using nullabilityLenient: Boolean): FreeApplicative[Field[T, *], Tuple] =
     inline erasedValue[Elems] match
       case _: EmptyTuple =>
         FreeApplicative.pure(EmptyTuple)
       case _ =>
         groupFields[T, Elems](names, idx)
 
-  private inline def groupFields[T, Elems <: Tuple](names: List[String], idx: Int): FreeApplicative[Field[T, *], Tuple] =
+  private inline def groupFields[T, Elems <: Tuple](names: List[String], idx: Int)(using nullabilityLenient: Boolean): FreeApplicative[Field[T, *], Tuple] =
     inline erasedValue[Elems] match
       // format: off
       case _: (t0 *: t1 *: t2 *: t3 *: t4 *: t5 *: t6 *: t7 *: t8 *: t9 *: t10 *: t11 *: t12 *: t13 *: t14 *: t15 *: t16 *: t17 *: t18 *: t19 *: t20 *: tail) =>
@@ -46,7 +54,7 @@ object SchemaAuto:
       case _ =>
         collectChunk[T, Elems](names, idx)
 
-  private inline def collectChunk[T, Elems <: Tuple](names: List[String], idx: Int): FreeApplicative[Field[T, *], Tuple] =
+  private inline def collectChunk[T, Elems <: Tuple](names: List[String], idx: Int)(using nullabilityLenient: Boolean): FreeApplicative[Field[T, *], Tuple] =
     inline erasedValue[Elems] match
       case _: EmptyTuple =>
         FreeApplicative.pure(EmptyTuple)
@@ -55,12 +63,16 @@ object SchemaAuto:
         val tail = collectChunk[T, t](names.tail, idx + 1)
         (head, tail).mapN(_ *: _)
 
-  private inline def fieldFor[T, A](name: String, idx: Int): FreeApplicative[Field[T, *], A] =
+  private inline def fieldFor[T, A](name: String, idx: Int)(using nullabilityLenient: Boolean): FreeApplicative[Field[T, *], A] =
     inline erasedValue[A] match
       case _: Option[a] =>
         val schema = summonInline[Schema[a]]
+        val schemaNullable = Schema.nullable[a](using schema)
         val getter: T => Option[a] = (t: T) => t.productElement[Option[a]](idx)
-        Schema.field[T].opt[a](name, getter)(using schema).asInstanceOf[FreeApplicative[Field[T, *], A]]
+        val getterNullable: T => Option[Option[a]] = (t: T) => t.productElement[Option[a]](idx).map(Some(_))
+
+        if nullabilityLenient then Schema.field[T].opt[Option[a]](name, getterNullable)(using schemaNullable).map(_.flatten).asInstanceOf[FreeApplicative[Field[T, *], A]]
+        else Schema.field[T].opt[a](name, getter)(using schema).asInstanceOf[FreeApplicative[Field[T, *], A]]
 
       case _ =>
         val schema = summonInline[Schema[A]]

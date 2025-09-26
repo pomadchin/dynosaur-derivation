@@ -2,6 +2,7 @@ package io.github.pomadchin.dynosaur.derivation
 
 import dynosaur.{DynamoValue as V, Schema}
 import cats.syntax.option.*
+import cats.syntax.either.*
 import cats.syntax.monoid.*
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
@@ -202,6 +203,58 @@ class SchemaAutoSpec extends AnyFunSpec with Matchers {
       check(schema, actual1: DocumentBase, expected1)
       check(schema, actual2: DocumentBase, expected2)
     }
+
+    it(
+      "should derive schema without discriminator for the optional fields, leniency to nullability"
+    ) {
+      val actual = DocumentSmall("id", Some("field"))
+      val actualNone = DocumentSmall("id", None)
+      val schema = SchemaAuto.derive[DocumentSmall]
+
+      val expected = V.m(
+        "field0" -> V.s("id"),
+        "field1" -> V.s("field")
+      )
+
+      val expectedNull = V.m(
+        "field0" -> V.s("id"),
+        "field1" -> V.nul
+      )
+
+      val expectedOptional = V.m(
+        "field0" -> V.s("id")
+      )
+
+      check(schema, actual, expected)
+      check(schema, actualNone, expectedOptional)
+      schema.read(expectedNull) shouldBe actualNone.asRight
+    }
+
+    it(
+      "should derive schema without discriminator for the optional fields, leniency to nullability is disabled"
+    ) {
+      val actual = DocumentSmall("id", Some("field"))
+      val actualNone = DocumentSmall("id", None)
+      val schema = SchemaAuto.derive[DocumentSmall](false)
+
+      val expected = V.m(
+        "field0" -> V.s("id"),
+        "field1" -> V.s("field")
+      )
+
+      val notExpectedNull = V.m(
+        "field0" -> V.s("id"),
+        "field1" -> V.nul
+      )
+
+      val expectedOptional = V.m(
+        "field0" -> V.s("id")
+      )
+
+      check(schema, actual, expected)
+      check(schema, actualNone, expectedOptional)
+      schema.read(notExpectedNull).isLeft shouldBe true
+    }
   }
 
   private def check[A](schema: Schema[A], actual: A, expected: V) = {
@@ -215,6 +268,11 @@ class SchemaAutoSpec extends AnyFunSpec with Matchers {
 
 object SchemaAutoSpec {
   sealed trait DocumentBase
+
+  final case class DocumentSmall(
+    field0: String,
+    field1: Option[String]
+  ) extends DocumentBase
 
   final case class Document(
     field0: String,
