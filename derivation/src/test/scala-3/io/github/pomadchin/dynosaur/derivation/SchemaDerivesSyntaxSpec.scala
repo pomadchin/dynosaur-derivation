@@ -1,9 +1,7 @@
 package io.github.pomadchin.dynosaur.derivation
 
 import dynosaur.{DynamoValue as V, Schema}
-import cats.syntax.option.*
 import cats.syntax.either.*
-import cats.syntax.monoid.*
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 

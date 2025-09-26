@@ -174,7 +174,7 @@ object SchemaMacro {
       else raw
     }
 
-    val knownDirectSubclassesTypes = knownDirectSubclasses.map(applyTypeArgs(_)).sortBy(_.typeSymbol.fullName)
+    val knownDirectSubclassesTypes = knownDirectSubclasses.map(applyTypeArgs).sortBy(_.typeSymbol.fullName)
 
     // for each subtype S, expand:
     //   val sS = SchemaAuto.derive[S](discriminatorName, nullabilityLenient)

@@ -5,6 +5,7 @@ import dynosaur.Schema.structure.{Alt, Field}
 import dynosaur.Schema.AltBuilder
 
 import cats.syntax.apply.*
+import cats.syntax.option.*
 import cats.syntax.semigroup.*
 import cats.free.FreeApplicative
 import cats.data.Chain
@@ -22,7 +23,7 @@ object SchemaAuto:
     derive[T](discriminatorName, true)
 
   inline def derive[T](discriminatorName: String, nullabilityLenient: Boolean)(using m: Mirror.Of[T]): Schema[T] =
-    derive[T](Some(discriminatorName), nullabilityLenient)
+    derive[T](discriminatorName.some, nullabilityLenient)
 
   inline def derive[T](discriminatorName: Option[String], nullabilityLenient: Boolean)(using m: Mirror.Of[T]): Schema[T] =
     inline m match
@@ -46,28 +47,21 @@ object SchemaAuto:
     inline erasedValue[Elems] match
       case _: EmptyTuple =>
         FreeApplicative.pure(EmptyTuple)
-      case _ =>
-        groupFields[T, Elems](names, idx)
-
-  private inline def groupFields[T, Elems <: Tuple](names: List[String], idx: Int)(using nullabilityLenient: Boolean): FreeApplicative[Field[T, *], Tuple] =
-    inline erasedValue[Elems] match
-      // format: off
       case _: (t0 *: t1 *: t2 *: t3 *: t4 *: t5 *: t6 *: t7 *: t8 *: t9 *: t10 *: t11 *: t12 *: t13 *: t14 *: t15 *: t16 *: t17 *: t18 *: t19 *: t20 *: tail) =>
-      // format: on
         val (headNames, tailNames) = names.splitAt(21)
-        val head = collectChunk[T, Tuple.Take[Elems, 21]](headNames, idx)
+        val head = buildField[T, Tuple.Take[Elems, 21]](headNames, idx)
         val tail = collectFields[T, Tuple.Drop[Elems, 21]](tailNames, idx + 21)
         (head, tail).mapN((h, t) => h *: t)
       case _ =>
-        collectChunk[T, Elems](names, idx)
+        buildField[T, Elems](names, idx)
 
-  private inline def collectChunk[T, Elems <: Tuple](names: List[String], idx: Int)(using nullabilityLenient: Boolean): FreeApplicative[Field[T, *], Tuple] =
+  private inline def buildField[T, Elems <: Tuple](names: List[String], idx: Int)(using nullabilityLenient: Boolean): FreeApplicative[Field[T, *], Tuple] =
     inline erasedValue[Elems] match
       case _: EmptyTuple =>
         FreeApplicative.pure(EmptyTuple)
       case _: (h *: t) =>
         val head = fieldFor[T, h](names.head, idx)
-        val tail = collectChunk[T, t](names.tail, idx + 1)
+        val tail = buildField[T, t](names.tail, idx + 1)
         (head, tail).mapN(_ *: _)
 
   private inline def fieldFor[T, A](name: String, idx: Int)(using nullabilityLenient: Boolean): FreeApplicative[Field[T, *], A] =
@@ -76,7 +70,7 @@ object SchemaAuto:
         val schema = summonInline[Schema[a]]
         val schemaNullable = Schema.nullable[a](using schema)
         val getter: T => Option[a] = (t: T) => t.productElement[Option[a]](idx)
-        val getterNullable: T => Option[Option[a]] = (t: T) => t.productElement[Option[a]](idx).map(Some(_))
+        val getterNullable: T => Option[Option[a]] = (t: T) => t.productElement[Option[a]](idx).map(_.some)
 
         val field =
           if nullabilityLenient then Schema.field[T].opt[Option[a]](name, getterNullable)(using schemaNullable).map(_.flatten)
@@ -95,7 +89,8 @@ object SchemaAuto:
 
   private inline def altBuilder[T, Elems <: Tuple](alt: AltBuilder[T], discriminatorName: Option[String], nullabilityLenient: Boolean): Chain[Alt[T]] =
     inline erasedValue[Elems] match
-      case _: EmptyTuple => Chain.nil
+      case _: EmptyTuple =>
+        Chain.nil
       case _: (h *: t) =>
         // attempt to summon Schema[h], if not found, derive it
         val headSchema = summonOrElse(deriveProduct[h](discriminatorName, nullabilityLenient)(using summonInline[Mirror.ProductOf[h]]))
