@@ -10,7 +10,7 @@ import cats.free.FreeApplicative
 import cats.data.Chain
 
 import scala.deriving.Mirror
-import scala.compiletime.{constValue, constValueTuple, erasedValue, error, summonInline}
+import scala.compiletime.{constValue, constValueTuple, erasedValue, error, summonFrom, summonInline}
 
 object SchemaAuto:
   inline def derive[T](using m: Mirror.Of[T]): Schema[T] = derive[T](true)
@@ -101,13 +101,18 @@ object SchemaAuto:
     inline erasedValue[E] match
       case _: EmptyTuple => Chain.nil
       case _: (h *: t) =>
-        // summonInline[Schema[h]] could be not recursive
-        val headSchema = deriveProduct[h](discriminatorName, nullabilityLenient)(using summonInline[Mirror.ProductOf[h]])
+        // attempt to summon Schema[h], if not found, derive it
+        val headSchema = summonOrElse(deriveProduct[h](discriminatorName, nullabilityLenient)(using summonInline[Mirror.ProductOf[h]]))
         val head = alt[h](headSchema)(using summonInline[Prism[T, h]])
 
         inline erasedValue[t] match
           case _: EmptyTuple => head
           case _ => head |+| altBuilder[T, t](alt, discriminatorName, nullabilityLenient)
+
+  private inline def summonOrElse[T](orElse: => T): T = summonFrom {
+    case t: T => t
+    case _ => orElse
+  }
 
   extension [T](t: T)
     def productElement[R](idx: Int): R =

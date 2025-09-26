@@ -43,9 +43,17 @@ object SchemaMacro {
     impl(c)(Some(discriminator), nullability)
   }
 
+  private def impl[T: c.WeakTypeTag](c: blackbox.Context)(discriminatorName: Option[String], nullabilityLenient: Boolean): c.Expr[Schema[T]] = {
+    import c.universe._
+    val sym = weakTypeOf[T].typeSymbol.asClass
+
+    if (sym.isSealed) sumImpl[T](c)(discriminatorName, nullabilityLenient)
+    else productImpl[T](c)(discriminatorName, nullabilityLenient)
+  }
+
   // when nullabilityLenient is set to true, optional fields can be interpreted as either explicitly null or as completely missing
   // schema favours missing fields on writes, but accepts both on reads
-  private def impl[T: c.WeakTypeTag](c: blackbox.Context)(discriminatorName: Option[String], nullabilityLenient: Boolean): c.Expr[Schema[T]] = {
+  private def productImpl[T: c.WeakTypeTag](c: blackbox.Context)(discriminatorName: Option[String], nullabilityLenient: Boolean): c.Expr[Schema[T]] = {
     import c.universe._
 
     val tpe = weakTypeOf[T]
@@ -105,7 +113,10 @@ object SchemaMacro {
     val nestedPattern = groupPattern(paramNames)
     val constructorCall = q"$companion(..$paramNames)"
     val convertedRecord =
-      q"$nestedTuple.mapN { case $nestedPattern => $constructorCall }"
+      if (paramNames.length == 1)
+        q"$nestedTuple.map { case $nestedPattern => $constructorCall }"
+      else
+        q"$nestedTuple.mapN { case $nestedPattern => $constructorCall }"
 
     // scalafix:off Disable.toString
     val companionLiteral = Literal(Constant(companion.name.toString))
@@ -126,5 +137,54 @@ object SchemaMacro {
       """
 
     c.Expr[Schema[T]](instance)
+  }
+
+  private def sumImpl[T: c.WeakTypeTag](c: blackbox.Context)(discriminatorName: Option[String], nullabilityLenient: Boolean): c.Expr[Schema[T]] = {
+    import c.universe._
+
+    val tpe = weakTypeOf[T]
+    val sym = tpe.typeSymbol.asClass
+
+    val discriminatorNameLiteral = discriminatorName.map(str => Literal(Constant(str)))
+
+    // Collect direct subclasses
+    val knownDirectSubclasses = sym.knownDirectSubclasses.toList
+    if (knownDirectSubclasses.isEmpty)
+      c.abort(c.enclosingPosition, s"Sealed type ${sym.fullName} has no known direct subclasses (macro visibility issue).")
+
+    // Map Base[A, B, ...] type args onto subclass if needed
+    def applyTypeArgs(sub: Symbol): Type = {
+      val raw = sub.asType.toType
+      if (tpe.typeArgs.nonEmpty && raw.typeParams.nonEmpty && raw.typeParams.size == tpe.typeArgs.size)
+        appliedType(raw.typeConstructor, tpe.typeArgs)
+      else raw
+    }
+
+    val knownDirectSubclassesTypes = knownDirectSubclasses.map(applyTypeArgs(_)).sortBy(_.typeSymbol.fullName)
+
+    // For each subtype S, expand:
+    //   val sS = SchemaAuto.derive[S](discriminatorName, nullabilityLenient)
+    //   val aS = alt[S](sS)(implicitly[Prism[T, S]])
+    // then combine with |+|
+    val altTrees = knownDirectSubclassesTypes.map { sTpe =>
+      discriminatorNameLiteral match {
+        case Some(discriminatorName) =>
+          q"""alt(_root_.io.github.pomadchin.dynosaur.derivation.SchemaAuto.derive[$sTpe]($discriminatorName, $nullabilityLenient))"""
+
+        case None =>
+          q"""alt(_root_.io.github.pomadchin.dynosaur.derivation.SchemaAuto.derive[$sTpe]($nullabilityLenient))"""
+      }
+    }
+    val combined = altTrees.reduceLeft[Tree] { (acc, next) => q"$acc |+| $next" }
+
+    val tree =
+      q"""
+        _root_.dynosaur.Schema.oneOf[$tpe] { alt =>
+          import _root_.cats.syntax.semigroup._
+          $combined
+        }
+      """
+
+    c.Expr[Schema[T]](tree)
   }
 }
