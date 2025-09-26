@@ -1,35 +1,37 @@
 package io.github.pomadchin.dynosaur.derivation
 
-import dynosaur.Schema
-import dynosaur.Schema.structure.Field
+import dynosaur.{Prism, Schema}
+import dynosaur.Schema.structure.{Alt, Field}
+import dynosaur.Schema.AltBuilder
 
 import cats.syntax.apply.*
+import cats.syntax.semigroup.*
 import cats.free.FreeApplicative
+import cats.data.Chain
 
 import scala.deriving.Mirror
 import scala.compiletime.{constValue, constValueTuple, erasedValue, error, summonInline}
 
 object SchemaAuto:
-  inline def derive[T](using m: Mirror.ProductOf[T]): Schema[T] = derive[T](true)
+  inline def derive[T](using m: Mirror.Of[T]): Schema[T] = derive[T](true)
 
-  inline def derive[T](nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
-    deriveSchema[T](None, nullabilityLenient)
+  inline def derive[T](nullabilityLenient: Boolean)(using m: Mirror.Of[T]): Schema[T] =
+    derive[T](None, nullabilityLenient)
 
-  inline def derive[T](discriminatorName: String)(using m: Mirror.ProductOf[T]): Schema[T] =
+  inline def derive[T](discriminatorName: String)(using m: Mirror.Of[T]): Schema[T] =
     derive[T](discriminatorName, true)
 
-  inline def derive[T](discriminatorName: String, nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
-    deriveSchema[T](Some(discriminatorName), nullabilityLenient)
+  inline def derive[T](discriminatorName: String, nullabilityLenient: Boolean)(using m: Mirror.Of[T]): Schema[T] =
+    derive[T](Some(discriminatorName), nullabilityLenient)
 
-  inline def derived[T](discriminatorName: Option[String], nullabilityLenient: Boolean)(using m: Mirror.Of[T]): Schema[T] =
+  inline def derive[T](discriminatorName: Option[String], nullabilityLenient: Boolean)(using m: Mirror.Of[T]): Schema[T] =
     inline m match
-      case p: Mirror.ProductOf[T] => deriveSchema[T](discriminatorName, nullabilityLenient)(using p)
-      // TODO: implement sum type support
-      case s: Mirror.SumOf[T] => error(s"Schema derives only for product types; passed in type: ${constValue[m.MirroredLabel]}")
+      case p: Mirror.ProductOf[T] => deriveProduct[T](discriminatorName, nullabilityLenient)(using p)
+      case s: Mirror.SumOf[T] => deriveSum[T](discriminatorName, nullabilityLenient)(using s)
 
   // when nullabilityLenient is set to true, optional fields can be interpreted as either explicitly null or as completely missing
   // schema favours missing fields on writes, but accepts both on reads
-  private inline def deriveSchema[T](discriminatorName: Option[String], nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
+  private inline def deriveProduct[T](discriminatorName: Option[String], nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
     val names = constValueTuple[m.MirroredElemLabels].asList[String]
     val fields = collectFields[T, m.MirroredElemTypes](names, 0)(using nullabilityLenient).map(nested => m.fromProduct(flatten(nested)))
 
@@ -91,6 +93,21 @@ object SchemaAuto:
       case h :: tail => h *: loop(tail)
 
     loop(t.toList)
+
+  private inline def deriveSum[T](discriminatorName: Option[String], nullabilityLenient: Boolean)(using m: Mirror.SumOf[T]): Schema[T] =
+    Schema.oneOf[T](altBuilder[T, m.MirroredElemTypes](_, discriminatorName, nullabilityLenient))
+
+  private inline def altBuilder[T, E <: Tuple](alt: AltBuilder[T], discriminatorName: Option[String], nullabilityLenient: Boolean): Chain[Alt[T]] =
+    inline erasedValue[E] match
+      case _: EmptyTuple => Chain.nil
+      case _: (h *: t) =>
+        // summonInline[Schema[h]] could be not recursive
+        val headSchema = deriveProduct[h](discriminatorName, nullabilityLenient)(using summonInline[Mirror.ProductOf[h]])
+        val head = alt[h](headSchema)(using summonInline[Prism[T, h]])
+
+        inline erasedValue[t] match
+          case _: EmptyTuple => head
+          case _ => head |+| altBuilder[T, t](alt, discriminatorName, nullabilityLenient)
 
   extension [T](t: T)
     def productElement[R](idx: Int): R =

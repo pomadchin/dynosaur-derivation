@@ -6,13 +6,13 @@ import dynosaur.Schema
 import scala.deriving.Mirror
 
 object optional:
-  extension (x: Schema.type) inline def derived[T](using m: Mirror.Of[T]): Schema[T] = SchemaAuto.derived[T](None, false)
+  extension (x: Schema.type) inline def derived[T](using m: Mirror.Of[T]): Schema[T] = SchemaAuto.derive[T](None, false)
 
   object discriminator:
-    extension (x: Schema.type) inline def derived[T](using m: Mirror.Of[T]): Schema[T] = SchemaAuto.derived[T](Some("discriminator"), false)
+    extension (x: Schema.type) inline def derived[T](using m: Mirror.Of[T]): Schema[T] = SchemaAuto.derive[T](Some("discriminator"), false)
 
 object nullable:
-  extension (x: Schema.type) inline def derived[T](using m: Mirror.Of[T]): Schema[T] = SchemaAuto.derived[T](None, true)
+  extension (x: Schema.type) inline def derived[T](using m: Mirror.Of[T]): Schema[T] = SchemaAuto.derive[T](None, true)
 
   object discriminator:
-    extension (x: Schema.type) inline def derived[T](using m: Mirror.Of[T]): Schema[T] = SchemaAuto.derived[T](Some("discriminator"), true)
+    extension (x: Schema.type) inline def derived[T](using m: Mirror.Of[T]): Schema[T] = SchemaAuto.derive[T](Some("discriminator"), true)

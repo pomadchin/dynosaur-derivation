@@ -303,10 +303,7 @@ class SchemaAutoSpec extends AnyFunSpec with Matchers with SchemaCheckers {
 object SchemaAutoSpec {
   sealed trait DocumentBase
 
-  final case class DocumentSmall(
-    field0: String,
-    field1: Option[String]
-  ) extends DocumentBase
+  final case class DocumentSmall(field0: String, field1: Option[String]) extends DocumentBase
 
   final case class Document(
     field0: String,

@@ -117,35 +117,49 @@ class SchemaDerivesSyntaxSpec extends AnyFunSpec with Matchers with SchemaChecke
       check(schema, actualNone, expectedOptional)
       schema.read(notExpectedNull).isLeft.shouldBe(true)
 
+    it("should derive schema for the sealed family"):
+      import nullable.discriminator.*
+
+      val actual1 = DocumentA("field0")
+      val actual2 = DocumentB("field0", "field1")
+
+      val schema = summon[Schema[DocumentFamily]]
+
+      val expected1 = V.m(
+        "discriminator" -> V.s("DocumentA"),
+        "field0" -> V.s(actual1.field0)
+      )
+
+      val expected2 = V.m(
+        "discriminator" -> V.s("DocumentB"),
+        "field0" -> V.s(actual2.field0),
+        "field1" -> V.s(actual2.field1)
+      )
+
+      check(schema, actual1: DocumentFamily, expected1)
+      check(schema, actual2: DocumentFamily, expected2)
+
 object SchemaDerivesSyntaxSpec:
   object optional:
     import io.github.pomadchin.dynosaur.derivation.optional.derived
 
-    final case class DocumentSmall(
-      field0: String,
-      field1: Option[String]
-    ) derives Schema
+    final case class DocumentSmall(field0: String, field1: Option[String]) derives Schema
 
     object discriminator:
       import io.github.pomadchin.dynosaur.derivation.optional.discriminator.derived
 
-      final case class DocumentSmall(
-        field0: String,
-        field1: Option[String]
-      ) derives Schema
+      final case class DocumentSmall(field0: String, field1: Option[String]) derives Schema
 
   object nullable:
     import io.github.pomadchin.dynosaur.derivation.nullable.derived
 
-    final case class DocumentSmall(
-      field0: String,
-      field1: Option[String]
-    ) derives Schema
+    final case class DocumentSmall(field0: String, field1: Option[String]) derives Schema
 
     object discriminator:
       import io.github.pomadchin.dynosaur.derivation.nullable.discriminator.derived
 
-      final case class DocumentSmall(
-        field0: String,
-        field1: Option[String]
-      ) derives Schema
+      final case class DocumentSmall(field0: String, field1: Option[String]) derives Schema
+
+      sealed trait DocumentFamily derives Schema
+      case class DocumentA(field0: String) extends DocumentFamily derives Schema
+      case class DocumentB(field0: String, field1: String) extends DocumentFamily derives Schema
