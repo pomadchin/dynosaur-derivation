@@ -16,6 +16,9 @@ object SchemaAuto {
 
   def derive[T](discriminatorName: String, nullabilityLenient: Boolean): Schema[T] =
     macro SchemaMacro.implWithDiscriminatorAndNullability[T]
+
+  def derive[T](discriminatorName: Option[String], nullabilityLenient: Boolean): Schema[T] =
+    macro SchemaMacro.implWithOptionalDiscriminatorAndNullability[T]
 }
 
 object SchemaMacro {
@@ -41,6 +44,22 @@ object SchemaMacro {
     val Literal(Constant(discriminator: String)) = discriminatorName.tree
     val Literal(Constant(nullability: Boolean)) = nullabilityLenient.tree
     impl(c)(Some(discriminator), nullability)
+  }
+
+  def implWithOptionalDiscriminatorAndNullability[T: c.WeakTypeTag](
+    c: blackbox.Context
+  )(discriminatorName: c.Expr[Option[String]], nullabilityLenient: c.Expr[Boolean]): c.Expr[Schema[T]] = {
+    import c.universe._
+
+    val discriminator =
+      try c.eval[Option[String]](c.Expr[Option[String]](c.untypecheck(discriminatorName.tree.duplicate)))
+      catch {
+        case _: Throwable =>
+          c.abort(c.enclosingPosition, s"discriminatorName must be a compile-time Option[String], got ${showCode(discriminatorName.tree)}")
+      }
+    val Literal(Constant(nullability: Boolean)) = nullabilityLenient.tree
+
+    impl(c)(discriminator, nullability)
   }
 
   private def impl[T: c.WeakTypeTag](c: blackbox.Context)(discriminatorName: Option[String], nullabilityLenient: Boolean): c.Expr[Schema[T]] = {
@@ -145,14 +164,12 @@ object SchemaMacro {
     val tpe = weakTypeOf[T]
     val sym = tpe.typeSymbol.asClass
 
-    val discriminatorNameLiteral = discriminatorName.map(str => Literal(Constant(str)))
-
-    // Collect direct subclasses
+    // collect all direct subclasses
     val knownDirectSubclasses = sym.knownDirectSubclasses.toList
     if (knownDirectSubclasses.isEmpty)
       c.abort(c.enclosingPosition, s"Sealed type ${sym.fullName} has no known direct subclasses (macro visibility issue).")
 
-    // Map Base[A, B, ...] type args onto subclass if needed
+    // map Base[A, B, ...] type args onto subclass if needed
     def applyTypeArgs(sub: Symbol): Type = {
       val raw = sub.asType.toType
       if (tpe.typeArgs.nonEmpty && raw.typeParams.nonEmpty && raw.typeParams.size == tpe.typeArgs.size)
@@ -166,16 +183,14 @@ object SchemaMacro {
     //   val sS = SchemaAuto.derive[S](discriminatorName, nullabilityLenient)
     //   val aS = alt[S](sS)(implicitly[Prism[T, S]])
     // then combine with |+|
-    val altTrees = knownDirectSubclassesTypes.map { sTpe =>
-      discriminatorNameLiteral match {
-        case Some(discriminatorName) =>
-          q"""alt(_root_.io.github.pomadchin.dynosaur.derivation.SchemaAuto.derive[$sTpe]($discriminatorName, $nullabilityLenient))"""
-
-        case None =>
-          q"""alt(_root_.io.github.pomadchin.dynosaur.derivation.SchemaAuto.derive[$sTpe]($nullabilityLenient))"""
+    val altTrees = knownDirectSubclassesTypes.map { tpe =>
+      val schemaTpe = appliedType(typeOf[Schema[?]].typeConstructor, List(tpe))
+      c.inferImplicitValue(schemaTpe, silent = true) match {
+        case EmptyTree => q"""alt(_root_.io.github.pomadchin.dynosaur.derivation.SchemaAuto.derive[$tpe]($discriminatorName, $nullabilityLenient))"""
+        case schema => q"""alt($schema)"""
       }
     }
-    val combined = altTrees.reduceLeft[Tree] { (acc, next) => q"$acc |+| $next" }
+    val combined = altTrees.reduceLeft { (acc, next) => q"$acc |+| $next" }
 
     val tree =
       q"""

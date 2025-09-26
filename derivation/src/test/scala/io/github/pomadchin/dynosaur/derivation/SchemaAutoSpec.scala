@@ -217,6 +217,30 @@ class SchemaAutoSpec extends AnyFunSpec with Matchers with SchemaCheckers {
       check(schema, actual2: DocumentFamily, expected2)
     }
 
+    it("should auto derive schema for the sealed family, with the derived schemas for the members") {
+      val actual1 = DocumentA("field0")
+      val actual2 = DocumentB("field0", "field1")
+
+      implicit val schema1: Schema[DocumentA] = SchemaAuto.derive[DocumentA]("discriminator")
+      implicit val schema2: Schema[DocumentB] = SchemaAuto.derive[DocumentB]("discriminator")
+
+      val schema = SchemaAuto.derive[DocumentFamily]("discriminator")
+
+      val expected1 = V.m(
+        "discriminator" -> V.s("DocumentA"),
+        "field0" -> V.s(actual1.field0)
+      )
+
+      val expected2 = V.m(
+        "discriminator" -> V.s("DocumentB"),
+        "field0" -> V.s(actual2.field0),
+        "field1" -> V.s(actual2.field1)
+      )
+
+      check(schema, actual1: DocumentFamily, expected1)
+      check(schema, actual2: DocumentFamily, expected2)
+    }
+
     it("should derive schema with discriminator for the optional fields, leniency to nullability") {
       val actual = DocumentSmall("id", Some("field"))
       val actualNone = DocumentSmall("id", None)
