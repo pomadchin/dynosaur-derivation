@@ -32,7 +32,7 @@ object SchemaAuto:
   // when nullabilityLenient is set to true, optional fields can be interpreted as either explicitly null or as completely missing
   // schema favours missing fields on writes, but accepts both on reads
   private inline def deriveProduct[T](discriminatorName: Option[String], nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
-    val names = constValueTuple[m.MirroredElemLabels].asList[String]
+    val names = constValueTuple[m.MirroredElemLabels].toList.map(_.toString)
     val fields = collectFields[T, m.MirroredElemTypes](names, 0)(using nullabilityLenient).map(nested => m.fromProduct(flatten(nested)))
 
     discriminatorName match
@@ -82,7 +82,8 @@ object SchemaAuto:
           if nullabilityLenient then Schema.field[T].opt[Option[a]](name, getterNullable)(using schemaNullable).map(_.flatten)
           else Schema.field[T].opt[a](name, getter)(using schema)
 
-        field.asInstanceOf[FreeApplicative[Field[T, *], A]]
+        // FreeApplicative[Field[T, *], Option[a]] =:= FreeApplicative[Field[T, *], A]
+        summonInline[Option[a] =:= A].liftCo(field)
 
       case _ =>
         val schema = summonInline[Schema[A]]
@@ -118,9 +119,5 @@ object SchemaAuto:
     loop(t.toList)
 
   extension [T](t: T)
-    def productElement[R](idx: Int): R =
-      t.asInstanceOf[Product].productElement(idx).asInstanceOf[R]
-
-  extension [T <: Tuple](t: T)
-    def asList[R]: List[R] =
-      t.toList.asInstanceOf[List[R]]
+    inline def productElement[R](idx: Int): R =
+      summonInline[T <:< Product](t).productElement(idx).asInstanceOf[R]
