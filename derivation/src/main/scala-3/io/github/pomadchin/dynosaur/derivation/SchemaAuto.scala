@@ -7,20 +7,25 @@ import cats.syntax.apply.*
 import cats.free.FreeApplicative
 
 import scala.deriving.Mirror
-import scala.compiletime.{constValue, constValueTuple, erasedValue, summonInline}
+import scala.compiletime.{constValue, constValueTuple, erasedValue, error, summonInline}
 
 object SchemaAuto:
-  inline def derive[T <: Product](using m: Mirror.ProductOf[T]): Schema[T] =
-    derive[T](true)
+  inline def derive[T](using m: Mirror.ProductOf[T]): Schema[T] = derive[T](true)
 
-  inline def derive[T <: Product](nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
+  inline def derive[T](nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
     deriveSchema[T](None, nullabilityLenient)
 
-  inline def derive[T <: Product](discriminatorName: String)(using m: Mirror.ProductOf[T]): Schema[T] =
+  inline def derive[T](discriminatorName: String)(using m: Mirror.ProductOf[T]): Schema[T] =
     derive[T](discriminatorName, true)
 
-  inline def derive[T <: Product](discriminatorName: String, nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
+  inline def derive[T](discriminatorName: String, nullabilityLenient: Boolean)(using m: Mirror.ProductOf[T]): Schema[T] =
     deriveSchema[T](Some(discriminatorName), nullabilityLenient)
+
+  inline def derived[T](discriminatorName: Option[String], nullabilityLenient: Boolean)(using m: Mirror.Of[T]): Schema[T] =
+    inline m match
+      case p: Mirror.ProductOf[T] => deriveSchema[T](discriminatorName, nullabilityLenient)(using p)
+      // TODO: implement sum type support
+      case s: Mirror.SumOf[T] => error(s"Schema derives only for product types; passed in type: ${constValue[m.MirroredLabel]}")
 
   // when nullabilityLenient is set to true, optional fields can be interpreted as either explicitly null or as completely missing
   // schema favours missing fields on writes, but accepts both on reads

@@ -7,13 +7,11 @@ import cats.syntax.monoid.*
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 
-class SchemaAutoSpec extends AnyFunSpec with Matchers {
+class SchemaAutoSpec extends AnyFunSpec with Matchers with SchemaCheckers {
   import SchemaAutoSpec.*
 
   describe("SchemaAutoSpec") {
-    it(
-      "should derive schema for case class with no discriminator"
-    ) {
+    it("should derive schema for case class with no discriminator") {
       val actual = Document("id", 1, 2L, Some(true), Some("test"))
       val schema = SchemaAuto.derive[Document]
       val expected = V.m(
@@ -42,9 +40,7 @@ class SchemaAutoSpec extends AnyFunSpec with Matchers {
       check(schema, actual, expected)
     }
 
-    it(
-      "should derive schema for case class of 25 with discriminator"
-    ) {
+    it("should derive schema for case class of 25 with discriminator") {
       // format: off
       val actual = Document25(
         "field0",  "field1",  "field2",  "field3",  "field4",
@@ -75,9 +71,7 @@ class SchemaAutoSpec extends AnyFunSpec with Matchers {
       check(schema, actual, expected)
     }
 
-    it(
-      "should derive schema for case class of 25 optionals with discriminator"
-    ) {
+    it("should derive schema for case class of 25 optionals with discriminator") {
       // format: off
       val actual = Document25o(
         "field0".some,  "field1".some,  "field2".some,  "field3".some,  "field4".some,
@@ -122,9 +116,7 @@ class SchemaAutoSpec extends AnyFunSpec with Matchers {
       check(schema, actual, expected)
     }
 
-    it(
-      "should derive schema for case class of 55 with discriminator"
-    ) {
+    it("should derive schema for case class of 55 with discriminator") {
       // format: off
       val actual = Document55(
         "field0",  "field1",  "field2",  "field3",  "field4",
@@ -204,9 +196,61 @@ class SchemaAutoSpec extends AnyFunSpec with Matchers {
       check(schema, actual2: DocumentBase, expected2)
     }
 
-    it(
-      "should derive schema without discriminator for the optional fields, leniency to nullability"
-    ) {
+    it("should derive schema with discriminator for the optional fields, leniency to nullability") {
+      val actual = DocumentSmall("id", Some("field"))
+      val actualNone = DocumentSmall("id", None)
+      val schema = SchemaAuto.derive[DocumentSmall]("discriminator")
+
+      val expected = V.m(
+        "discriminator" -> V.s("DocumentSmall"),
+        "field0" -> V.s("id"),
+        "field1" -> V.s("field")
+      )
+
+      val expectedNull = V.m(
+        "discriminator" -> V.s("DocumentSmall"),
+        "field0" -> V.s("id"),
+        "field1" -> V.nul
+      )
+
+      val expectedOptional = V.m(
+        "discriminator" -> V.s("DocumentSmall"),
+        "field0" -> V.s("id")
+      )
+
+      check(schema, actual, expected)
+      check(schema, actualNone, expectedOptional)
+      schema.read(expectedNull) shouldBe actualNone.asRight
+    }
+
+    it("should derive schema with discriminator for the optional fields, leniency to nullability is disabled") {
+      val actual = DocumentSmall("id", Some("field"))
+      val actualNone = DocumentSmall("id", None)
+      val schema = SchemaAuto.derive[DocumentSmall]("discriminator", false)
+
+      val expected = V.m(
+        "discriminator" -> V.s("DocumentSmall"),
+        "field0" -> V.s("id"),
+        "field1" -> V.s("field")
+      )
+
+      val notExpectedNull = V.m(
+        "discriminator" -> V.s("DocumentSmall"),
+        "field0" -> V.s("id"),
+        "field1" -> V.nul
+      )
+
+      val expectedOptional = V.m(
+        "discriminator" -> V.s("DocumentSmall"),
+        "field0" -> V.s("id")
+      )
+
+      check(schema, actual, expected)
+      check(schema, actualNone, expectedOptional)
+      schema.read(notExpectedNull).isLeft shouldBe true
+    }
+
+    it("should derive schema without discriminator for the optional fields, leniency to nullability") {
       val actual = DocumentSmall("id", Some("field"))
       val actualNone = DocumentSmall("id", None)
       val schema = SchemaAuto.derive[DocumentSmall]
@@ -230,9 +274,7 @@ class SchemaAutoSpec extends AnyFunSpec with Matchers {
       schema.read(expectedNull) shouldBe actualNone.asRight
     }
 
-    it(
-      "should derive schema without discriminator for the optional fields, leniency to nullability is disabled"
-    ) {
+    it("should derive schema without discriminator for the optional fields, leniency to nullability is disabled") {
       val actual = DocumentSmall("id", Some("field"))
       val actualNone = DocumentSmall("id", None)
       val schema = SchemaAuto.derive[DocumentSmall](false)
@@ -255,14 +297,6 @@ class SchemaAutoSpec extends AnyFunSpec with Matchers {
       check(schema, actualNone, expectedOptional)
       schema.read(notExpectedNull).isLeft shouldBe true
     }
-  }
-
-  private def check[A](schema: Schema[A], actual: A, expected: V) = {
-    val output = schema.write(actual).toOption
-    val roundTrip = output.flatMap(schema.read(_).toOption)
-
-    output shouldBe expected.some
-    roundTrip shouldBe actual.some
   }
 }
 
