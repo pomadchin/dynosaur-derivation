@@ -4,7 +4,7 @@
 [![Maven Badge](https://img.shields.io/maven-central/v/io.github.pomadchin/dynosaur-derivation_3?color=blue)](https://central.sonatype.com/search?q=g%3Aio.github.pomadchin&smo=true&name=dynosaur-derivation_3)
 [![Snapshots Badge](https://img.shields.io/badge/snapshots-available-orange)](https://central.sonatype.com/service/rest/repository/browse/maven-snapshots/io/github/pomadchin/dynosaur-derivation_3/) 
 
-[Dynosaur](https://github.com/SystemFw/dynosaur) DynamoDB Schema derivation library for case classes.
+[Dynosaur](https://github.com/SystemFw/dynosaur) DynamoDB Schema macro derivation library.
 
 Before using this library, ensure to align with the [Dynosaur documentation and the underlying motivation](https://systemfw.org/dynosaur/#/motivation?id=motivation).
 Dynosaur is designed around explicit, hand-crafted schemas, and that approach should generally be preferred.
